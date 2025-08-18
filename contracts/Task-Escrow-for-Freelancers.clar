@@ -11,6 +11,8 @@
 (define-constant ERR_NO_DISPUTE (err u110))
 (define-constant ERR_DISPUTE_RESOLVED (err u111))
 (define-constant ERR_INVALID_DISPUTE_DECISION (err u112))
+(define-constant ERR_TEMPLATE_NOT_FOUND (err u113))
+(define-constant ERR_TEMPLATE_ALREADY_EXISTS (err u114))
 
 (define-constant TASK_STATUS_ACTIVE u1)
 (define-constant TASK_STATUS_COMPLETED u2)
@@ -22,6 +24,7 @@
 
 (define-data-var next-task-id uint u1)
 (define-data-var next-dispute-id uint u1)
+(define-data-var next-template-id uint u1)
 (define-data-var contract-owner principal tx-sender)
 (define-data-var platform-fee-percent uint u250)
 
@@ -77,6 +80,21 @@
   {
     total-score: uint,
     review-count: uint
+  }
+)
+
+(define-map task-templates
+  uint
+  {
+    creator: principal,
+    name: (string-ascii 50),
+    title: (string-ascii 100),
+    description: (string-ascii 500),
+    default-amount: uint,
+    milestones: uint,
+    default-deadline-blocks: uint,
+    created-at: uint,
+    usage-count: uint
   }
 )
 
@@ -353,6 +371,94 @@
   )
 )
 
+(define-public (create-template 
+  (name (string-ascii 50)) 
+  (title (string-ascii 100)) 
+  (description (string-ascii 500)) 
+  (default-amount uint) 
+  (milestones uint) 
+  (default-deadline-blocks uint))
+  (let ((template-id (var-get next-template-id)))
+    (asserts! (> default-amount u0) ERR_INVALID_AMOUNT)
+    (asserts! (> milestones u0) ERR_INVALID_AMOUNT)
+    (asserts! (> default-deadline-blocks u0) ERR_INVALID_AMOUNT)
+    
+    (map-set task-templates template-id
+      {
+        creator: tx-sender,
+        name: name,
+        title: title,
+        description: description,
+        default-amount: default-amount,
+        milestones: milestones,
+        default-deadline-blocks: default-deadline-blocks,
+        created-at: stacks-block-height,
+        usage-count: u0
+      }
+    )
+    
+    (var-set next-template-id (+ template-id u1))
+    (ok template-id)
+  )
+)
+
+(define-public (create-task-from-template 
+  (template-id uint) 
+  (freelancer principal) 
+  (amount (optional uint)))
+  (let 
+    (
+      (template (unwrap! (map-get? task-templates template-id) ERR_TEMPLATE_NOT_FOUND))
+      (task-amount (default-to (get default-amount template) amount))
+      (deadline (+ stacks-block-height (get default-deadline-blocks template)))
+    )
+    (try! (create-task 
+      freelancer 
+      (get title template) 
+      (get description template) 
+      task-amount 
+      (get milestones template) 
+      deadline))
+    
+    (map-set task-templates template-id
+      (merge template { usage-count: (+ (get usage-count template) u1) })
+    )
+    
+    (ok (- (var-get next-task-id) u1))
+  )
+)
+
+(define-public (update-template 
+  (template-id uint) 
+  (name (string-ascii 50)) 
+  (title (string-ascii 100)) 
+  (description (string-ascii 500)) 
+  (default-amount uint) 
+  (milestones uint) 
+  (default-deadline-blocks uint))
+  (let ((template (unwrap! (map-get? task-templates template-id) ERR_TEMPLATE_NOT_FOUND)))
+    (asserts! (is-eq tx-sender (get creator template)) ERR_NOT_AUTHORIZED)
+    (asserts! (> default-amount u0) ERR_INVALID_AMOUNT)
+    (asserts! (> milestones u0) ERR_INVALID_AMOUNT)
+    (asserts! (> default-deadline-blocks u0) ERR_INVALID_AMOUNT)
+    
+    (map-set task-templates template-id
+      (merge template
+        {
+          name: name,
+          title: title,
+          description: description,
+          default-amount: default-amount,
+          milestones: milestones,
+          default-deadline-blocks: default-deadline-blocks
+        }
+      )
+    )
+    
+    (ok true)
+  )
+)
+
 (define-read-only (get-task (task-id uint))
   (map-get? tasks task-id)
 )
@@ -391,4 +497,12 @@
 
 (define-read-only (get-contract-balance)
   (stx-get-balance (as-contract tx-sender))
+)
+
+(define-read-only (get-template (template-id uint))
+  (map-get? task-templates template-id)
+)
+
+(define-read-only (get-next-template-id)
+  (var-get next-template-id)
 )
