@@ -13,6 +13,10 @@
 (define-constant ERR_INVALID_DISPUTE_DECISION (err u112))
 (define-constant ERR_TEMPLATE_NOT_FOUND (err u113))
 (define-constant ERR_TEMPLATE_ALREADY_EXISTS (err u114))
+(define-constant ERR_EXTENSION_NOT_FOUND (err u115))
+(define-constant ERR_EXTENSION_ALREADY_EXISTS (err u116))
+(define-constant ERR_EXTENSION_EXPIRED (err u117))
+(define-constant ERR_INVALID_EXTENSION_PERIOD (err u118))
 
 (define-constant TASK_STATUS_ACTIVE u1)
 (define-constant TASK_STATUS_COMPLETED u2)
@@ -22,9 +26,14 @@
 (define-constant DISPUTE_STATUS_OPEN u1)
 (define-constant DISPUTE_STATUS_RESOLVED u2)
 
+(define-constant EXTENSION_STATUS_PENDING u1)
+(define-constant EXTENSION_STATUS_APPROVED u2)
+(define-constant EXTENSION_STATUS_REJECTED u3)
+
 (define-data-var next-task-id uint u1)
 (define-data-var next-dispute-id uint u1)
 (define-data-var next-template-id uint u1)
+(define-data-var next-extension-id uint u1)
 (define-data-var contract-owner principal tx-sender)
 (define-data-var platform-fee-percent uint u250)
 
@@ -95,6 +104,22 @@
     default-deadline-blocks: uint,
     created-at: uint,
     usage-count: uint
+  }
+)
+
+(define-map deadline-extensions
+  uint
+  {
+    task-id: uint,
+    freelancer: principal,
+    client: principal,
+    current-deadline: uint,
+    requested-deadline: uint,
+    extension-blocks: uint,
+    reason: (string-ascii 300),
+    status: uint,
+    requested-at: uint,
+    responded-at: (optional uint)
   }
 )
 
@@ -505,4 +530,127 @@
 
 (define-read-only (get-next-template-id)
   (var-get next-template-id)
+)
+
+(define-public (request-deadline-extension 
+  (task-id uint) 
+  (extension-blocks uint) 
+  (reason (string-ascii 300)))
+  (let 
+    (
+      (task (unwrap! (map-get? tasks task-id) ERR_TASK_NOT_FOUND))
+      (extension-id (var-get next-extension-id))
+      (new-deadline (+ (get deadline task) extension-blocks))
+    )
+    (asserts! (is-eq tx-sender (get freelancer task)) ERR_NOT_AUTHORIZED)
+    (asserts! (is-eq (get status task) TASK_STATUS_ACTIVE) ERR_TASK_NOT_ACTIVE)
+    (asserts! (> extension-blocks u0) ERR_INVALID_EXTENSION_PERIOD)
+    (asserts! (<= extension-blocks u14400) ERR_INVALID_EXTENSION_PERIOD)
+    (asserts! (is-none (get-pending-extension task-id)) ERR_EXTENSION_ALREADY_EXISTS)
+    
+    (map-set deadline-extensions extension-id
+      {
+        task-id: task-id,
+        freelancer: (get freelancer task),
+        client: (get client task),
+        current-deadline: (get deadline task),
+        requested-deadline: new-deadline,
+        extension-blocks: extension-blocks,
+        reason: reason,
+        status: EXTENSION_STATUS_PENDING,
+        requested-at: stacks-block-height,
+        responded-at: none
+      }
+    )
+    
+    (var-set next-extension-id (+ extension-id u1))
+    (ok extension-id)
+  )
+)
+
+(define-private (get-pending-extension (task-id uint))
+  (get result 
+    (fold check-pending-extension
+      (list u1 u2 u3 u4 u5 u6 u7 u8 u9 u10 u11 u12 u13 u14 u15 u16 u17 u18 u19 u20)
+      { target-task-id: task-id, result: none }
+    )
+  )
+)
+
+(define-private (check-pending-extension 
+  (extension-id uint) 
+  (data { target-task-id: uint, result: (optional uint) }))
+  (if (is-some (get result data))
+    data
+    (match (map-get? deadline-extensions extension-id)
+      extension 
+        (if (and 
+          (is-eq (get task-id extension) (get target-task-id data))
+          (is-eq (get status extension) EXTENSION_STATUS_PENDING))
+          (merge data { result: (some extension-id) })
+          data)
+      data
+    )
+  )
+)
+
+(define-public (approve-deadline-extension (extension-id uint))
+  (let 
+    (
+      (extension (unwrap! (map-get? deadline-extensions extension-id) ERR_EXTENSION_NOT_FOUND))
+      (task (unwrap! (map-get? tasks (get task-id extension)) ERR_TASK_NOT_FOUND))
+    )
+    (asserts! (is-eq tx-sender (get client extension)) ERR_NOT_AUTHORIZED)
+    (asserts! (is-eq (get status extension) EXTENSION_STATUS_PENDING) ERR_EXTENSION_EXPIRED)
+    (asserts! (is-eq (get status task) TASK_STATUS_ACTIVE) ERR_TASK_NOT_ACTIVE)
+    
+    (map-set deadline-extensions extension-id
+      (merge extension 
+        {
+          status: EXTENSION_STATUS_APPROVED,
+          responded-at: (some stacks-block-height)
+        }
+      )
+    )
+    
+    (map-set tasks (get task-id extension)
+      (merge task { deadline: (get requested-deadline extension) })
+    )
+    
+    (ok true)
+  )
+)
+
+(define-public (reject-deadline-extension (extension-id uint))
+  (let 
+    (
+      (extension (unwrap! (map-get? deadline-extensions extension-id) ERR_EXTENSION_NOT_FOUND))
+      (task (unwrap! (map-get? tasks (get task-id extension)) ERR_TASK_NOT_FOUND))
+    )
+    (asserts! (is-eq tx-sender (get client extension)) ERR_NOT_AUTHORIZED)
+    (asserts! (is-eq (get status extension) EXTENSION_STATUS_PENDING) ERR_EXTENSION_EXPIRED)
+    
+    (map-set deadline-extensions extension-id
+      (merge extension 
+        {
+          status: EXTENSION_STATUS_REJECTED,
+          responded-at: (some stacks-block-height)
+        }
+      )
+    )
+    
+    (ok true)
+  )
+)
+
+(define-read-only (get-deadline-extension (extension-id uint))
+  (map-get? deadline-extensions extension-id)
+)
+
+(define-read-only (get-task-pending-extension (task-id uint))
+  (get-pending-extension task-id)
+)
+
+(define-read-only (get-next-extension-id)
+  (var-get next-extension-id)
 )
