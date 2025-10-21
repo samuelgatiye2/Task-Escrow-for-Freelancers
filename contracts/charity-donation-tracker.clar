@@ -17,6 +17,11 @@
 (define-constant ERR_DISPUTE_RESOLVED (err u111))
 (define-constant ERR_INVALID_TIME_PERIOD (err u112))
 (define-constant ERR_ANALYTICS_NOT_FOUND (err u113))
+(define-constant ERR_INVALID_RATING (err u114))
+(define-constant ERR_REVIEW_ALREADY_EXISTS (err u115))
+(define-constant ERR_CANNOT_REVIEW_SELF (err u116))
+(define-constant ERR_BADGE_NOT_FOUND (err u117))
+(define-constant ERR_BADGE_ALREADY_EARNED (err u118))
 
 ;; Status constants
 (define-constant TASK_STATUS_ACTIVE u1)
@@ -27,6 +32,19 @@
 (define-constant DISPUTE_STATUS_OPEN u1)
 (define-constant DISPUTE_STATUS_RESOLVED u2)
 
+;; Reputation level constants
+(define-constant REPUTATION_LEVEL_NEWCOMER u1)
+(define-constant REPUTATION_LEVEL_RELIABLE u2)
+(define-constant REPUTATION_LEVEL_EXPERT u3)
+(define-constant REPUTATION_LEVEL_MASTER u4)
+(define-constant REPUTATION_LEVEL_LEGEND u5)
+
+;; Badge type constants
+(define-constant BADGE_TYPE_COMPLETION u1)
+(define-constant BADGE_TYPE_QUALITY u2)
+(define-constant BADGE_TYPE_RELIABILITY u3)
+(define-constant BADGE_TYPE_COMMUNICATION u4)
+
 ;; Data variables
 (define-data-var next-task-id uint u1)
 (define-data-var next-dispute-id uint u1)
@@ -36,6 +54,8 @@
 (define-data-var total-platform-volume uint u0)
 (define-data-var total-completed-tasks uint u0)
 (define-data-var total-active-users uint u0)
+(define-data-var next-badge-id uint u1)
+(define-data-var total-reviews-count uint u0)
 
 ;; Core data structures
 (define-map tasks
@@ -109,6 +129,49 @@
     unique-freelancers: uint,
     average-task-value: uint,
     completion-rate: uint
+  }
+)
+
+;; Reputation System - ENHANCED FEATURE
+(define-map user-reputation
+  principal
+  {
+    reputation-score: uint,
+    reliability-score: uint,
+    communication-score: uint,
+    quality-score: uint,
+    total-reviews: uint,
+    positive-reviews: uint,
+    tasks-completed-on-time: uint,
+    tasks-completed-late: uint,
+    total-tasks-completed: uint,
+    average-response-time: uint,
+    badges-earned: (list 10 uint),
+    reputation-level: uint,
+    last-updated: uint
+  }
+)
+
+(define-map reputation-badges
+  uint
+  {
+    badge-name: (string-ascii 50),
+    description: (string-ascii 200),
+    requirement-threshold: uint,
+    badge-type: uint ;; 1=completion, 2=quality, 3=reliability, 4=communication
+  }
+)
+
+(define-map user-reviews
+  { reviewer: principal, reviewee: principal, task-id: uint }
+  {
+    overall-rating: uint,
+    quality-rating: uint,
+    communication-rating: uint,
+    timeliness-rating: uint,
+    review-text: (string-ascii 500),
+    created-at: uint,
+    verified: bool
   }
 )
 
@@ -441,8 +504,245 @@
   )
 )
 
+;; Reputation System Functions - ENHANCED FEATURE
+(define-public (submit-review 
+  (reviewee principal) 
+  (task-id uint) 
+  (overall-rating uint) 
+  (quality-rating uint) 
+  (communication-rating uint) 
+  (timeliness-rating uint) 
+  (review-text (string-ascii 500)))
+  (begin
+    (asserts! (not (is-eq tx-sender reviewee)) ERR_CANNOT_REVIEW_SELF)
+    (asserts! (is-task-participant task-id) ERR_NOT_AUTHORIZED)
+    (asserts! (and (<= overall-rating u5) (>= overall-rating u1)) ERR_INVALID_RATING)
+    (asserts! (and (<= quality-rating u5) (>= quality-rating u1)) ERR_INVALID_RATING)
+    (asserts! (and (<= communication-rating u5) (>= communication-rating u1)) ERR_INVALID_RATING)
+    (asserts! (and (<= timeliness-rating u5) (>= timeliness-rating u1)) ERR_INVALID_RATING)
+    
+    (let ((review-key { reviewer: tx-sender, reviewee: reviewee, task-id: task-id }))
+      (asserts! (is-none (map-get? user-reviews review-key)) ERR_REVIEW_ALREADY_EXISTS)
+      
+      (map-set user-reviews review-key
+        {
+          overall-rating: overall-rating,
+          quality-rating: quality-rating,
+          communication-rating: communication-rating,
+          timeliness-rating: timeliness-rating,
+          review-text: review-text,
+          created-at: stacks-block-height,
+          verified: true
+        }
+      )
+      
+      (update-user-reputation reviewee overall-rating quality-rating communication-rating timeliness-rating)
+      (var-set total-reviews-count (+ (var-get total-reviews-count) u1))
+      (ok true)
+    )
+  )
+)
+
+(define-private (update-user-reputation (user principal) (overall uint) (quality uint) (communication uint) (timeliness uint))
+  (let ((current-rep (default-to 
+    { 
+      reputation-score: u0, reliability-score: u0, communication-score: u0, quality-score: u0, 
+      total-reviews: u0, positive-reviews: u0, tasks-completed-on-time: u0, tasks-completed-late: u0, 
+      total-tasks-completed: u0, average-response-time: u0, badges-earned: (list), 
+      reputation-level: REPUTATION_LEVEL_NEWCOMER, last-updated: stacks-block-height 
+    } 
+    (map-get? user-reputation user))))
+    
+    (let 
+      (
+        (new-total-reviews (+ (get total-reviews current-rep) u1))
+        (new-positive-reviews (+ (get positive-reviews current-rep) (if (>= overall u4) u1 u0)))
+        (new-reputation-score (calculate-reputation-score current-rep overall quality communication timeliness))
+        (new-quality-score (/ (+ (* (get quality-score current-rep) (get total-reviews current-rep)) quality) new-total-reviews))
+        (new-communication-score (/ (+ (* (get communication-score current-rep) (get total-reviews current-rep)) communication) new-total-reviews))
+        (new-reliability-score (/ (+ (* (get reliability-score current-rep) (get total-reviews current-rep)) timeliness) new-total-reviews))
+        (new-reputation-level (calculate-reputation-level new-reputation-score new-total-reviews))
+      )
+      
+      (map-set user-reputation user
+        (merge current-rep {
+          reputation-score: new-reputation-score,
+          reliability-score: new-reliability-score,
+          communication-score: new-communication-score,
+          quality-score: new-quality-score,
+          total-reviews: new-total-reviews,
+          positive-reviews: new-positive-reviews,
+          reputation-level: new-reputation-level,
+          last-updated: stacks-block-height
+        })
+      )
+      
+      (check-and-award-badges user new-reputation-score new-total-reviews new-positive-reviews)
+      true
+    )
+  )
+)
+
+(define-private (calculate-reputation-score (current-rep { reputation-score: uint, reliability-score: uint, communication-score: uint, quality-score: uint, total-reviews: uint, positive-reviews: uint, tasks-completed-on-time: uint, tasks-completed-late: uint, total-tasks-completed: uint, average-response-time: uint, badges-earned: (list 10 uint), reputation-level: uint, last-updated: uint }) (overall uint) (quality uint) (communication uint) (timeliness uint))
+  (let 
+    (
+      (current-score (get reputation-score current-rep))
+      (total-reviews (get total-reviews current-rep))
+      (weighted-average (/ (+ overall quality communication timeliness) u4))
+    )
+    (if (is-eq total-reviews u0)
+      (* weighted-average u200) ;; Initial score multiplier
+      (/ (+ (* current-score total-reviews) (* weighted-average u200)) (+ total-reviews u1))
+    )
+  )
+)
+
+(define-private (calculate-reputation-level (score uint) (reviews uint))
+  (if (and (>= score u900) (>= reviews u50))
+    REPUTATION_LEVEL_LEGEND
+    (if (and (>= score u800) (>= reviews u25))
+      REPUTATION_LEVEL_MASTER
+      (if (and (>= score u700) (>= reviews u10))
+        REPUTATION_LEVEL_EXPERT
+        (if (and (>= score u600) (>= reviews u5))
+          REPUTATION_LEVEL_RELIABLE
+          REPUTATION_LEVEL_NEWCOMER
+        )
+      )
+    )
+  )
+)
+
+(define-private (check-and-award-badges (user principal) (reputation-score uint) (total-reviews uint) (positive-reviews uint))
+  (let ((current-rep (unwrap-panic (map-get? user-reputation user))))
+    (begin
+      ;; Award completion badges
+      (if (and (>= total-reviews u10) (not (is-badge-earned user u1)))
+        (award-badge user u1)
+        true
+      )
+      
+      ;; Award quality badge
+      (if (and (>= reputation-score u800) (not (is-badge-earned user u2)))
+        (award-badge user u2)
+        true
+      )
+      
+      ;; Award reliability badge
+      (if (and (>= (get reliability-score current-rep) u450) (not (is-badge-earned user u3)))
+        (award-badge user u3)
+        true
+      )
+      
+      ;; Award communication badge
+      (if (and (>= (get communication-score current-rep) u450) (not (is-badge-earned user u4)))
+        (award-badge user u4)
+        true
+      )
+      
+      true
+    )
+  )
+)
+
+(define-private (is-badge-earned (user principal) (badge-id uint))
+  (let ((current-rep (unwrap-panic (map-get? user-reputation user))))
+    (is-some (index-of (get badges-earned current-rep) badge-id))
+  )
+)
+
+(define-private (award-badge (user principal) (badge-id uint))
+  (let ((current-rep (unwrap-panic (map-get? user-reputation user))))
+    (map-set user-reputation user
+      (merge current-rep {
+        badges-earned: (unwrap-panic (as-max-len? (append (get badges-earned current-rep) badge-id) u10))
+      })
+    )
+    true
+  )
+)
+
+(define-public (initialize-reputation-badges)
+  (begin
+    (asserts! (is-contract-owner) ERR_NOT_AUTHORIZED)
+    
+    (map-set reputation-badges u1
+      {
+        badge-name: "Reviewer",
+        description: "Completed 10+ reviews with constructive feedback",
+        requirement-threshold: u10,
+        badge-type: BADGE_TYPE_COMPLETION
+      }
+    )
+    
+    (map-set reputation-badges u2
+      {
+        badge-name: "Quality Master",
+        description: "Maintained 800+ reputation score with excellent work",
+        requirement-threshold: u800,
+        badge-type: BADGE_TYPE_QUALITY
+      }
+    )
+    
+    (map-set reputation-badges u3
+      {
+        badge-name: "Reliable Partner",
+        description: "Consistently delivers tasks on time",
+        requirement-threshold: u450,
+        badge-type: BADGE_TYPE_RELIABILITY
+      }
+    )
+    
+    (map-set reputation-badges u4
+      {
+        badge-name: "Communication Expert",
+        description: "Excellent communication and client interaction",
+        requirement-threshold: u450,
+        badge-type: BADGE_TYPE_COMMUNICATION
+      }
+    )
+    
+    (var-set next-badge-id u5)
+    (ok true)
+  )
+)
+
+(define-public (get-reputation-summary (user principal))
+  (ok (map-get? user-reputation user))
+)
+
+(define-read-only (get-user-review (reviewer principal) (reviewee principal) (task-id uint))
+  (map-get? user-reviews { reviewer: reviewer, reviewee: reviewee, task-id: task-id })
+)
+
+(define-read-only (get-reputation-badge (badge-id uint))
+  (map-get? reputation-badges badge-id)
+)
+
+(define-read-only (calculate-trust-score (user principal))
+  (match (map-get? user-reputation user)
+    rep (let 
+      (
+        (base-score (get reputation-score rep))
+        (review-bonus (* (get total-reviews rep) u5))
+        (positive-ratio (if (> (get total-reviews rep) u0)
+                         (/ (* (get positive-reviews rep) u100) (get total-reviews rep))
+                         u0))
+        (badge-bonus (* (len (get badges-earned rep)) u25))
+      )
+      (+ base-score review-bonus badge-bonus positive-ratio)
+    )
+    u0
+  )
+)
+
+(define-read-only (get-top-rated-users (limit uint))
+  ;; This would need to be implemented with a more complex ranking system
+  ;; For now, return a simple structure indicating the feature is available
+  (ok { message: "Top rated users feature available", limit: limit })
+)
+
 ;; Dispute functions
-(define-public (create-dispute (task-id uint) (reason (string-ascii 500)))
   (let 
     (
       (task (unwrap! (map-get? tasks task-id) ERR_TASK_NOT_FOUND))

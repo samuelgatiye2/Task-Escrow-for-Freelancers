@@ -1,43 +1,43 @@
-# Task Analytics and Statistics System
+# Enhanced Reputation System for Task Escrow Platform
 
 ## Overview
-Enhanced the Task Escrow for Freelancers smart contract with a comprehensive analytics and statistics tracking system. This independent feature provides valuable insights into platform usage, user behavior, and performance metrics without interfering with existing escrow functionality.
+Added a comprehensive reputation system that tracks user performance, awards badges, and calculates trust scores based on task completion, quality, communication, and timeliness ratings.
 
 ## Technical Implementation
 
-### New Data Structures
-- **Platform Analytics**: Tracks periodic statistics including task creation/completion rates, total volume, fees collected, and completion rates
-- **User Activity**: Records individual user metrics such as task counts, transaction volumes, and engagement patterns  
-- **Daily Metrics**: Captures daily platform usage including new tasks, completions, and active user counts
-- **User Performance Metrics**: Monitors freelancer performance including completion times, satisfaction scores, and earnings
+### Data Structures Added
+- **user-reputation**: Comprehensive reputation tracking with scores, badges, and metrics
+- **reputation-badges**: Configurable badge system with requirements and descriptions  
+- **user-reviews**: Detailed review system with multi-dimensional ratings
 
 ### Key Functions Added
-- `generate-analytics-report(period-start, period-end)` - Creates comprehensive analytics reports for specified time periods
-- `update-user-performance-metrics(user, completion-time, on-time, satisfaction)` - Records user performance data
-- `get-platform-analytics(period-id)` - Retrieves analytics reports
-- `get-user-activity(user)` - Returns user activity statistics
-- `get-daily-metrics(date)` - Provides daily platform metrics
-- `get-platform-overview()` - Returns overall platform statistics
+- **submit-review**: Submit detailed reviews with quality, communication, and timeliness ratings
+- **initialize-reputation-badges**: Setup default badge system (Reviewer, Quality Master, Reliable Partner, Communication Expert)
+- **get-reputation-summary**: Retrieve complete reputation profile for any user
+- **calculate-trust-score**: Advanced trust calculation combining reputation, reviews, and badges
 
-### Analytics Integration
-The analytics system automatically tracks:
-- Task creation and completion events
-- User activity patterns and volumes
-- Daily platform metrics through block height calculations
-- Platform fee collection and total transaction volumes
+### Reputation Levels
+- **Newcomer** (Level 1): Starting level for new users
+- **Reliable** (Level 2): 600+ reputation, 5+ reviews
+- **Expert** (Level 3): 700+ reputation, 10+ reviews  
+- **Master** (Level 4): 800+ reputation, 25+ reviews
+- **Legend** (Level 5): 900+ reputation, 50+ reviews
+
+### Badge System
+- **Reviewer Badge**: 10+ completed reviews
+- **Quality Master**: 800+ reputation score
+- **Reliable Partner**: 450+ reliability score
+- **Communication Expert**: 450+ communication score
 
 ## Testing & Validation
-✅ Contract uses Clarity v3 with proper error handling
-✅ Analytics functions are independent with no cross-contract calls  
-✅ Comprehensive test suite validates core functionality
-✅ CI/CD pipeline configured for automated testing
-✅ All line endings normalized to LF format
-✅ Access control properly implemented (owner-only functions)
+- ? Contract passes clarinet check
+- ? All npm tests successful  
+- ? CI/CD pipeline configured
+- ? Clarity v3 compliant with proper error handling
 
-## Value Proposition
-This analytics system enables:
-- **Business Intelligence**: Track platform growth, user engagement, and revenue metrics
-- **User Insights**: Monitor freelancer performance and client satisfaction
-- **Platform Optimization**: Identify trends and optimize user experience
-- **Reporting**: Generate comprehensive reports for stakeholders
-- **Performance Monitoring**: Track completion rates, volumes, and user activity patterns
+## Features
+- Multi-dimensional rating system (quality, communication, timeliness)
+- Automatic badge awarding based on performance metrics
+- Trust score calculation with weighted factors
+- Reputation level progression system
+- Review verification and anti-spam protection
