@@ -1,0 +1,44 @@
+[network]
+name = "devnet"
+deployment_fee_rate = 10
+
+[accounts.deployer]
+mnemonic = "twice kind fence tip hidden tilt action fragile skin nothing glory cousin green tomorrow spring wrist shed math olympic multiply hip blue scout claw"
+balance = 100_000_000_000_000
+
+[accounts.wallet_1]
+mnemonic = "sell invite acquire kitten bamboo drastic junk tilt vote trip answer will tent lead Van course accident powder take vessel laundry process subsidy ritual"
+balance = 100_000_000_000_000
+
+[accounts.wallet_2] 
+mnemonic = "hold excess usual excess ring elephant install account glad dry fragile donkey gaze humble truck breeze nation gasp vacuum limb head keep delay hospital"
+balance = 100_000_000_000_000
+
+[accounts.wallet_3]
+mnemonic = "cycle puppy glare enroll cost improve round trend wrist mushroom scorpion tower claim oppose clever elephant dinosaur eight problem before frozen dune wagon high"
+balance = 100_000_000_000_000
+
+[accounts.wallet_4]
+mnemonic = "board list obtain sugar hour worth raven scout denial thunder horse logic fury scorpion fold genuine phrase wealth news aim below celery when cabin"
+balance = 100_000_000_000_000
+
+[devnet]
+disable_bitcoin_explorer = true
+bind_address = "0.0.0.0:20443"
+# bitcoin_peer_host = "0.0.0.0"
+# bitcoin_peer_port = 18444
+# bitcoin_rpc_host = "0.0.0.0"
+# bitcoin_rpc_port = 18443
+# bitcoin_rpc_username = "devnet"
+# bitcoin_rpc_password = "devnet"
+# bitcoin_controller_host = "0.0.0.0"
+# bitcoin_controller_port = 18442
+# bitcoin_controller_block_time = 30_000
+# stacks_api_host = "0.0.0.0"
+# stacks_api_port = 3999
+# postgres_port = 5432
+# postgres_username = "postgres"
+# postgres_password = "postgres"
+# postgres_database = "stacks_blockchain_api"
+# bitcoin_controller_automining_disabled = false
+enable_subnet_node = false
