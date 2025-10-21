@@ -1,22 +1,7 @@
 ﻿[network]
-name = \"simnet\"
+name = "simnet"
+rpc_url = "http://localhost:20443"
 
 [accounts.deployer]
-mnemonic = \"abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon\"
-balance = 100_000_000_000_000
-
-[accounts.wallet_1]  
-mnemonic = \"abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon\"
-balance = 100_000_000_000_000
-
-[accounts.wallet_2]
-mnemonic = \"abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon\"
-balance = 100_000_000_000_000
-
-[accounts.wallet_3]
-mnemonic = \"abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon\"
-balance = 100_000_000_000_000
-
-[accounts.wallet_4]
-mnemonic = \"abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon\"
-balance = 100_000_000_000_000
+mnemonic = "sound idle panel often situate develop unit text design antenna vendor screen opinion balcony share trigger accuse scatter visa uniform brass update opinion media"
+balance = 1000000000000

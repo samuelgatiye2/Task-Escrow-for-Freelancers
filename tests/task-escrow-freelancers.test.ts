@@ -12,7 +12,7 @@ describe("Task Escrow for Freelancers with Analytics", () => {
 
   it("can create a new task with escrow", () => {
     const { result } = simnet.callPublicFn(
-      "task-escrow-freelancers",
+      "charity-donation-tracker",
       "create-task",
       [
         simnet.types.principal(freelancer),
@@ -30,7 +30,7 @@ describe("Task Escrow for Freelancers with Analytics", () => {
 
   it("returns correct platform overview stats", () => {
     const { result } = simnet.callReadOnlyFn(
-      "task-escrow-freelancers",
+      "charity-donation-tracker",
       "get-platform-overview",
       [],
       deployer
@@ -42,7 +42,7 @@ describe("Task Escrow for Freelancers with Analytics", () => {
 
   it("allows rating users", () => {
     const { result } = simnet.callPublicFn(
-      "task-escrow-freelancers",
+      "charity-donation-tracker",
       "rate-user",
       [simnet.types.principal(freelancer), simnet.types.uint(5)],
       client
@@ -54,7 +54,7 @@ describe("Task Escrow for Freelancers with Analytics", () => {
   it("enforces proper access control", () => {
     // Only contract owner can set platform fee
     const feeResult = simnet.callPublicFn(
-      "task-escrow-freelancers",
+      "charity-donation-tracker",
       "set-platform-fee",
       [simnet.types.uint(300)],
       client // Not the owner
