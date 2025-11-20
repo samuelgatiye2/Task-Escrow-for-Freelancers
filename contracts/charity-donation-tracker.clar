@@ -742,8 +742,144 @@
   (ok { message: "Top rated users feature available", limit: limit })
 )
 
-;; Dispute functions
+(define-constant ERR_CANCELLATION_DENIED (err u119))
+(define-constant ERR_ALREADY_CANCELLED (err u120))
+
+(define-constant CANCELLATION_STATUS_PENDING u1)
+(define-constant CANCELLATION_STATUS_APPROVED u2)
+(define-constant CANCELLATION_STATUS_REJECTED u3)
+
+(define-map task-cancellations
+  uint
+  {
+    initiated-by: principal,
+    status: uint,
+    reason: (string-ascii 500),
+    created-at: uint,
+    resolved-at: (optional uint),
+    client-approved: bool,
+    freelancer-approved: bool,
+    refund-amount-client: uint,
+    refund-amount-freelancer: uint
+  }
+)
+
+(define-public (initiate-task-cancellation (task-id uint) (reason (string-ascii 500)))
   (let 
+    (
+      (task (unwrap! (map-get? tasks task-id) ERR_TASK_NOT_FOUND))
+      (task-fund (unwrap! (map-get? task-funds task-id) ERR_TASK_NOT_FOUND))
+      (completed-milestones (get completed-milestones task))
+      (total-milestones (get milestones task))
+      (remaining-milestones (- total-milestones completed-milestones))
+      (milestone-value (/ (get total-amount task) total-milestones))
+      (refund-to-client (if (> remaining-milestones u0)
+                          (* milestone-value remaining-milestones)
+                          u0))
+      (refund-to-freelancer (- (get escrow-amount task-fund) (get released-amount task-fund) refund-to-client))
+    )
+    (asserts! (is-task-participant task-id) ERR_NOT_AUTHORIZED)
+    (asserts! (is-eq (get status task) TASK_STATUS_ACTIVE) ERR_TASK_NOT_ACTIVE)
+    (asserts! (is-none (map-get? task-cancellations task-id)) ERR_ALREADY_CANCELLED)
+    
+    (map-set task-cancellations task-id
+      {
+        initiated-by: tx-sender,
+        status: CANCELLATION_STATUS_PENDING,
+        reason: reason,
+        created-at: stacks-block-height,
+        resolved-at: none,
+        client-approved: (is-eq tx-sender (get client task)),
+        freelancer-approved: (is-eq tx-sender (get freelancer task)),
+        refund-amount-client: refund-to-client,
+        refund-amount-freelancer: refund-to-freelancer
+      }
+    )
+    
+    (ok task-id)
+  )
+)
+
+(define-public (approve-task-cancellation (task-id uint))
+  (let 
+    (
+      (task (unwrap! (map-get? tasks task-id) ERR_TASK_NOT_FOUND))
+      (cancellation (unwrap! (map-get? task-cancellations task-id) ERR_TASK_NOT_FOUND))
+      (task-fund (unwrap! (map-get? task-funds task-id) ERR_TASK_NOT_FOUND))
+    )
+    (asserts! (is-task-participant task-id) ERR_NOT_AUTHORIZED)
+    (asserts! (is-eq (get status cancellation) CANCELLATION_STATUS_PENDING) ERR_CANCELLATION_DENIED)
+    (asserts! (not (is-eq tx-sender (get initiated-by cancellation))) ERR_NOT_AUTHORIZED)
+    
+    (let 
+      (
+        (is-client (is-eq tx-sender (get client task)))
+        (is-freelancer (is-eq tx-sender (get freelancer task)))
+        (new-client-approved (or (get client-approved cancellation) is-client))
+        (new-freelancer-approved (or (get freelancer-approved cancellation) is-freelancer))
+        (both-approved (and new-client-approved new-freelancer-approved))
+      )
+      
+      (map-set task-cancellations task-id
+        (merge cancellation {
+          client-approved: new-client-approved,
+          freelancer-approved: new-freelancer-approved,
+          status: (if both-approved CANCELLATION_STATUS_APPROVED CANCELLATION_STATUS_PENDING),
+          resolved-at: (if both-approved (some stacks-block-height) none)
+        })
+      )
+      
+      (if both-approved
+        (begin
+          (if (> (get refund-amount-client cancellation) u0)
+            (try! (as-contract (stx-transfer? (get refund-amount-client cancellation) tx-sender (get client task))))
+            true
+          )
+          
+          (if (> (get refund-amount-freelancer cancellation) u0)
+            (try! (as-contract (stx-transfer? (get refund-amount-freelancer cancellation) tx-sender (get freelancer task))))
+            true
+          )
+          
+          (try! (as-contract (stx-transfer? (get platform-fee task-fund) tx-sender (var-get contract-owner))))
+          
+          (map-set tasks task-id (merge task { status: TASK_STATUS_CANCELLED }))
+          (ok "cancellation-approved-refunds-processed")
+        )
+        (ok "cancellation-pending-other-party-approval")
+      )
+    )
+  )
+)
+
+(define-public (reject-task-cancellation (task-id uint))
+  (let 
+    (
+      (task (unwrap! (map-get? tasks task-id) ERR_TASK_NOT_FOUND))
+      (cancellation (unwrap! (map-get? task-cancellations task-id) ERR_TASK_NOT_FOUND))
+    )
+    (asserts! (is-task-participant task-id) ERR_NOT_AUTHORIZED)
+    (asserts! (is-eq (get status cancellation) CANCELLATION_STATUS_PENDING) ERR_CANCELLATION_DENIED)
+    (asserts! (not (is-eq tx-sender (get initiated-by cancellation))) ERR_NOT_AUTHORIZED)
+    
+    (map-set task-cancellations task-id
+      (merge cancellation {
+        status: CANCELLATION_STATUS_REJECTED,
+        resolved-at: (some stacks-block-height)
+      })
+    )
+    
+    (ok "cancellation-rejected")
+  )
+)
+
+(define-read-only (get-task-cancellation (task-id uint))
+  (map-get? task-cancellations task-id)
+)
+
+;; Dispute functions
+(define-public (create-dispute (task-id uint) (reason (string-ascii 500)))
+  (let
     (
       (task (unwrap! (map-get? tasks task-id) ERR_TASK_NOT_FOUND))
       (dispute-id (var-get next-dispute-id))
